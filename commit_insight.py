@@ -79,41 +79,6 @@ def save_commit_text_and_exit(commit_text):
         file.write(text_content)
     root.destroy()
 
-def save_to_csv():
-    global commits
-    if not commits:
-        messagebox.showerror("Error", "No commits fetched. Please fetch commits first.")
-        return
-
-    with filedialog.asksaveasfile(mode='w', defaultextension=".csv", filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]) as csvfile:
-        if csvfile is not None:
-            fieldnames = ['Author', 'Date', 'Message', 'Filename', 'Status', 'Additions', 'Deletions', 'Raw URL']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            for commit in commits:
-                commit_message = commit['commit']['message']
-                author_name = commit['commit']['author']['name']
-                commit_date = commit['commit']['author']['date']
-
-                commit_details = fetch_commit_details(commit['url'])
-                if commit_details and 'files' in commit_details:
-                    for file in commit_details['files']:
-                        filename = file['filename']
-                        additions = file['additions']
-                        deletions = file['deletions']
-                        status = file['status']
-                        raw_url = file['raw_url']
-
-                        # Check if any field is empty before writing the row
-                        if author_name and commit_date and commit_message and filename and status and additions is not None and deletions is not None and raw_url:
-                            writer.writerow({'Author': author_name, 'Date': commit_date, 'Message': commit_message,
-                                             'Filename': filename, 'Status': status, 'Additions': additions,
-                                             'Deletions': deletions, 'Raw URL': raw_url})
-            messagebox.showinfo("Success", f"Data saved to {csvfile.name}")
-        else:
-            messagebox.showerror("Error", "File save operation canceled.")
-
-
 def display_commits():
     repo_url = repo_url_entry.get()
     branch = branch_combobox.get()
@@ -131,29 +96,20 @@ def display_commits():
     commits = fetch_commits(repo_url, branch, since, until)
     
     if commits:
-        commit_frame = tk.Frame(mainframe)
-        commit_frame.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S))
-
-        commit_text = tk.Text(commit_frame, wrap="none", width=180, height=40)
-        commit_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-
-        scroll_x = Scrollbar(commit_frame, orient=tk.HORIZONTAL, command=commit_text.xview)
-        commit_text.configure(xscrollcommand=scroll_x.set)
-        scroll_x.grid(row=1, column=0, sticky=(tk.W, tk.E))
-
         commit_text.config(state=tk.NORMAL)
         commit_text.delete("1.0", tk.END)
 
-
-        header = "Author".ljust(20) + "Date".ljust(30) + "Message".ljust(60) + "Filename".ljust(40) + \
+        # Write header row with padding for each column
+        header = "Author".ljust(20) + "Date".ljust(30) + "Message".ljust(60) + "Files Changed".ljust(50) + \
                  "Status".ljust(15) + "Additions".ljust(10) + "Deletions".ljust(10) + "\n"
         commit_text.insert(tk.END, header)
-        commit_text.insert(tk.END, "-" * 190 + "\n")
+        commit_text.insert(tk.END, "-" * 200 + "\n")
 
+        # Write commit data with padding for each column
         for commit in commits:
             commit_message = commit['commit']['message']
             author_name = commit['commit']['author']['name']
-            commit_date_utc = commit['commit']['author']['date']
+            commit_date_utc = commit['commit']['author']['date']  # Assuming UTC time
             commit_date_utc = datetime.strptime(commit_date_utc, '%Y-%m-%dT%H:%M:%SZ')
             ist = pytz.timezone('Asia/Kolkata')
             commit_date_ist = commit_date_utc.astimezone(ist)
@@ -161,35 +117,69 @@ def display_commits():
 
             commit_details = fetch_commit_details(commit['url'])
             if commit_details and 'files' in commit_details:
+                file_info_list = []
                 for file in commit_details['files']:
                     filename = file['filename']
                     additions = file['additions']
                     deletions = file['deletions']
                     status = file['status']
-                    raw_url = file['raw_url']
-
-                    row = f"{author_name.ljust(20)}{commit_date_ist_str.ljust(25)}{commit_message.ljust(60)}" \
-                          f"{filename.ljust(38)}{status.ljust(15)}{str(additions).ljust(15)}{str(deletions).ljust(15)}"
-
-                    commit_text.insert(tk.END, row + '\n')
-
-                    
-                    commit_text.insert(tk.END, ' ' * 100)
-                    download_button = tk.Button(commit_text, text=f'Download {filename}', fg='blue', cursor='hand2',
-                                                command=lambda url=raw_url: download_callback(url))
-                    commit_text.window_create(tk.END, window=download_button)
-                    commit_text.insert(tk.END, '\n')
-
+                    file_info_list.append(f"{filename} (A: {additions}, D: {deletions}, S: {status})")
+                file_info = "; ".join(file_info_list)
+                
+                # Construct the formatted string for each row with padding for each column
+                row = f"{author_name.ljust(20)}{commit_date_ist_str.ljust(25)}{commit_message.ljust(60)}" \
+                      f"{file_info.ljust(90)}"
+                
+                # Append the row to commit_text
+                commit_text.insert(tk.END, row + '\n')
+        
         save_csv_button = ttk.Button(mainframe, text="Save to CSV", command=save_to_csv)
         save_csv_button.grid(row=7, column=2, sticky=tk.W)       
-        
+       
         commit_text.config(state=tk.DISABLED)
         
         root.protocol("WM_DELETE_WINDOW", lambda: save_commit_text_and_exit(commit_text))
 
-
     else:
         messagebox.showerror("Error", "No commits fetched.")
+
+def save_to_csv():
+    global commits  # Ensure commits are available from the display_commits function
+    if not commits:
+        messagebox.showerror("Error", "No commits fetched. Please fetch commits first.")
+        return
+
+    with filedialog.asksaveasfile(mode='w', defaultextension=".csv", filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]) as csvfile:
+        if csvfile is not None:
+            fieldnames = ['Author', 'Date', 'Message', 'Files Changed']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for commit in commits:
+                commit_message = commit['commit']['message']
+                author_name = commit['commit']['author']['name']
+                commit_date = commit['commit']['author']['date']
+
+                commit_details = fetch_commit_details(commit['url'])
+                if commit_details and 'files' in commit_details:
+                    file_info_list = []
+                    for file in commit_details['files']:
+                        filename = file['filename']
+                        additions = file['additions']
+                        deletions = file['deletions']
+                        status = file['status']
+                        file_info_list.append(f"{filename} (A: {additions}, D: {deletions}, S: {status})")
+                    file_info = "; ".join(file_info_list)
+                    
+                    writer.writerow({
+                        'Author': author_name,
+                        'Date': commit_date,
+                        'Message': commit_message,
+                        'Files Changed': file_info
+                    })
+            messagebox.showinfo("Success", f"Data saved to {csvfile.name}")
+        else:
+            messagebox.showerror("Error", "File save operation canceled.")
+
 
 def update_branches():
     repo_url = repo_url_entry.get()
@@ -209,7 +199,7 @@ def fetch_commit_details(commit_url):
     else:
         return None
     
-
+# Setup UI
 root = tk.Tk()
 root.title("GitHub Commits Fetcher")
 
@@ -247,12 +237,15 @@ fetch_button.grid(row=5, column=2, sticky=tk.W)
 # commit_text = tk.Text(mainframe, wrap="word", width=180, height=40)
 # commit_text.grid(row=6, column=1, columnspan=2, sticky=(tk.W, tk.E))
 
+# Create a frame for commit_text and horizontal scrollbar
 commit_frame = tk.Frame(mainframe)
 commit_frame.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S))
 
-commit_text = tk.Text(commit_frame, wrap="none", width=180, height=40)
+# Create commit_text inside commit_frame
+commit_text = tk.Text(commit_frame, wrap="none", width=180, height=40)  # Adjust width and height as needed
 commit_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
+# Add horizontal scroll to commit_text
 scroll_x = Scrollbar(commit_frame, orient=tk.HORIZONTAL, command=commit_text.xview)
 commit_text.configure(xscrollcommand=scroll_x.set)
 scroll_x.grid(row=1, column=0, sticky=(tk.W, tk.E))
@@ -273,6 +266,8 @@ mainframe.columnconfigure(2, weight=1)
 mainframe.columnconfigure(3, weight=1)
 mainframe.columnconfigure(4, weight=1)
 
+
+# Save the text content to a file when closing the application
 def on_closing():
     if commit_text:
         save_commit_text_and_exit(commit_text)

@@ -12,6 +12,7 @@ import pytz
 from datetime import datetime
 import os
 from tkinter import Scrollbar
+import json
 
 load_dotenv()
 
@@ -24,7 +25,7 @@ def show_progress_bar():
     overlay_frame = tk.Toplevel(root)
     overlay_frame.attributes('-alpha', 0.5)
     overlay_frame.configure(bg='black')
-    overlay_frame.overrideredir
+    overlay_frame.overrideredirect(True) 
     overlay_frame.geometry(f"{root.winfo_width()}x{root.winfo_height()}+{root.winfo_x()}+{root.winfo_y()}")
 
     progress_bar = ttk.Progressbar(overlay_frame, mode='indeterminate', style='CircleStyle.Horizontal.TProgressbar')
@@ -168,7 +169,7 @@ def display_commits():
                 
                 row = f"{author_name.ljust(20)}{commit_date_ist_str.ljust(25)}{commit_message.ljust(60)}" \
                       f"{file_info.ljust(90)}"
-            
+                
                 commit_text.insert(tk.END, row + '\n')
         
         save_csv_button = ttk.Button(mainframe, text="Save to CSV", command=save_to_csv)
@@ -178,15 +179,17 @@ def display_commits():
 
         destroy_progress_bar()        
         root.protocol("WM_DELETE_WINDOW", lambda: save_commit_text_and_exit(commit_text))
+        save_preferences()
 
     else:
         destroy_progress_bar()
         messagebox.showerror("Error", "No commits fetched.")
+        save_preferences()
 
 def convert_api_commit_url_to_page_url(api_commit_url):
     # Check if the URL contains '/commits/' substring
     if '/commits/' in api_commit_url:
-        # Replace '/commits/' with '/commit/'
+        # Replaces '/commits/' with '/commit/'
         page_commit_url = api_commit_url.replace('/commits/', '/commit/')
         return page_commit_url
     else:
@@ -271,9 +274,12 @@ def save_to_csv():
             
             destroy_progress_bar()
             messagebox.showinfo("Success", f"Data saved to {csvfile.name}")
+            save_preferences()
         else:
             destroy_progress_bar()
             messagebox.showerror("Error", "File save operation canceled.")
+            save_preferences()
+
 
 def update_branches():
     global GITHUB_TOKEN
@@ -297,9 +303,11 @@ def fetch_commit_details(commit_url):
     else:
         return None
     
-# Setup UI
 root = tk.Tk()
 root.title("GitHub Commits Fetcher")
+
+mainframe = ttk.Frame(root, padding="10")
+mainframe.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
 style = ttk.Style()
 style.layout('CircleStyle.Horizontal.TProgressbar',
@@ -309,9 +317,6 @@ style.layout('CircleStyle.Horizontal.TProgressbar',
                 'sticky': 'nswe'}),
               ('Horizontal.Progressbar.label', {'sticky': ''})])
 style.configure('CircleStyle.Horizontal.TProgressbar', background='blue', thickness=20)
-
-mainframe = ttk.Frame(root, padding="10")
-mainframe.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
 heading_font = tkfont.Font(family="Segoe UI", size=28, weight="bold")
 
@@ -334,16 +339,47 @@ def toggle_token_visibility():
         token_entry.config(show="*")
         show_hide_button.config(text="Show")
 
-show_hide_button = ttk.Button(mainframe, text="Show", command=toggle_token_visibility)
-show_hide_button.grid(row=1, column=3, sticky=tk.W)
-
 token_entry = ttk.Entry(mainframe, show="*")
 token_entry.grid(row=1, column=2, sticky=(tk.W, tk.E))
+
+
+show_hide_button = ttk.Button(mainframe, text="Show", command=toggle_token_visibility)
+show_hide_button.grid(row=1, column=3, sticky=tk.W)
 
 repo_url_label = ttk.Label(mainframe, text="GitHub Repository URL:")
 repo_url_label.grid(row=2, column=1, sticky=tk.W)
 repo_url_entry = ttk.Entry(mainframe, width=50)
 repo_url_entry.grid(row=2, column=2, sticky=(tk.W, tk.E))
+
+github_token = ""
+repo_url = ""
+
+def save_preferences():
+    global github_token, repo_url
+    preferences = {
+        "github_token": token_entry.get(),
+        "repo_url": repo_url_entry.get()
+    }
+    with open('preferences.json', 'w') as file:
+        json.dump(preferences, file)
+
+def load_preferences():
+    global github_token, repo_url
+    try:
+        with open('preferences.json', 'r') as file:
+            preferences = json.load(file)
+            github_token = preferences.get("github_token", "")
+            repo_url = preferences.get("repo_url", "")
+        
+            token_entry.delete(0, tk.END)
+            token_entry.insert(0, github_token)
+            repo_url_entry.delete(0, tk.END)
+            repo_url_entry.insert(0, repo_url)
+
+    except FileNotFoundError:
+        print("Preferences file not found.")
+
+load_preferences()
 
 fetch_branches_button = ttk.Button(mainframe, text="Fetch Branches", command=update_branches, width=20, style='TButton')
 fetch_branches_button.grid(row=2, column=3, sticky=tk.W)
@@ -421,7 +457,6 @@ mainframe.columnconfigure(1, weight=1)
 mainframe.columnconfigure(2, weight=1)
 mainframe.columnconfigure(3, weight=1)
 mainframe.columnconfigure(4, weight=1)
-
 
 # Save the text content to a file when closing the application
 def on_closing():

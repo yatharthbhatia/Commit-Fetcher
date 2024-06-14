@@ -17,6 +17,38 @@ load_dotenv()
 
 GITHUB_TOKEN = ""
 
+def show_progress_bar():
+    global overlay_frame
+    global progress_bar
+
+    overlay_frame = tk.Toplevel(root)
+    overlay_frame.attributes('-alpha', 0.5)
+    overlay_frame.configure(bg='black')
+    overlay_frame.overrideredir
+    overlay_frame.geometry(f"{root.winfo_width()}x{root.winfo_height()}+{root.winfo_x()}+{root.winfo_y()}")
+
+    progress_bar = ttk.Progressbar(overlay_frame, mode='indeterminate', style='CircleStyle.Horizontal.TProgressbar')
+    progress_bar.pack(padx=100, pady=50)
+
+    progress_bar.start()
+
+    return overlay_frame, progress_bar
+
+
+def destroy_progress_bar():
+    global overlay_frame
+    global progress_bar
+
+    if progress_bar:
+        progress_bar.stop()
+        progress_bar.destroy()
+        progress_bar = None
+
+    if overlay_frame:
+        overlay_frame.destroy()
+        overlay_frame = None
+
+
 def fetch_branches(repo_url):
     parts = repo_url.rstrip('/').split('/')
     owner = parts[-2]
@@ -96,6 +128,12 @@ def display_commits():
         messagebox.showerror("Error", "Invalid date format. Please use YYYY-MM-DD.")
         return
     
+    global overlay_frame
+    global progress_bar
+
+    overlay_frame, progress_bar = show_progress_bar()
+
+
     global commits
     commits = fetch_commits(repo_url, branch, since, until)
     
@@ -111,7 +149,7 @@ def display_commits():
         for commit in commits:
             commit_message = commit['commit']['message']
             author_name = commit['commit']['author']['name']
-            commit_date_utc = commit['commit']['author']['date']  # Assuming UTC time
+            commit_date_utc = commit['commit']['author']['date']
             commit_date_utc = datetime.strptime(commit_date_utc, '%Y-%m-%dT%H:%M:%SZ')
             ist = pytz.timezone('Asia/Kolkata')
             commit_date_ist = commit_date_utc.astimezone(ist)
@@ -130,18 +168,29 @@ def display_commits():
                 
                 row = f"{author_name.ljust(20)}{commit_date_ist_str.ljust(25)}{commit_message.ljust(60)}" \
                       f"{file_info.ljust(90)}"
-                
+            
                 commit_text.insert(tk.END, row + '\n')
         
         save_csv_button = ttk.Button(mainframe, text="Save to CSV", command=save_to_csv)
         save_csv_button.grid(row=7, column=2, sticky=tk.W)       
        
         commit_text.config(state=tk.DISABLED)
-        
+
+        destroy_progress_bar()        
         root.protocol("WM_DELETE_WINDOW", lambda: save_commit_text_and_exit(commit_text))
 
     else:
+        destroy_progress_bar()
         messagebox.showerror("Error", "No commits fetched.")
+
+def convert_api_commit_url_to_page_url(api_commit_url):
+    # Check if the URL contains '/commits/' substring
+    if '/commits/' in api_commit_url:
+        # Replace '/commits/' with '/commit/'
+        page_commit_url = api_commit_url.replace('/commits/', '/commit/')
+        return page_commit_url
+    else:
+        return api_commit_url
 
 def save_to_csv():
     global commits
@@ -149,6 +198,11 @@ def save_to_csv():
     if not commits:
         messagebox.showerror("Error", "No commits fetched. Please fetch commits first.")
         return
+    
+    global overlay_frame
+    global progress_bar
+
+    overlay_frame, progress_bar = show_progress_bar()
 
     with filedialog.asksaveasfile(mode='w', defaultextension=".csv", filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]) as csvfile:
         if csvfile is not None:
@@ -182,39 +236,43 @@ def save_to_csv():
 
                 commit_details = fetch_commit_details(commit['url'])
                 if commit_details and 'files' in commit_details:
+                    file_info_list = []
                     for file in commit_details['files']:
                         filename = file['filename']
                         additions = file['additions']
                         deletions = file['deletions']
                         status = file['status']
+                        file_info_list.append(f"{filename} (A: {additions}, D: {deletions}, S: {status})")
+                    files_changed = "; ".join(file_info_list)
 
-                        file_info = f"{filename} (A: {additions}, D: {deletions}, S: {status})"
-                        raw_url = file['raw_url']
+                    commit_url = convert_api_commit_url_to_page_url(commit['html_url'])
 
-                        row_data = {}
-                        if 'Author' in fieldnames:
-                            row_data['Author'] = author_name
-                        if 'Date' in fieldnames:
-                            row_data['Date'] = commit_date
-                        if 'Message' in fieldnames:
-                            row_data['Message'] = commit_message
-                        if 'Files Changed' in fieldnames:
-                            row_data['Files Changed'] = file_info
-                        if 'Status' in fieldnames:
-                            row_data['Status'] = status
-                        if 'Additions' in fieldnames:
-                            row_data['Additions'] = additions
-                        if 'Deletions' in fieldnames:
-                            row_data['Deletions'] = deletions
-                        if 'Raw URLs' in fieldnames:
-                            row_data['Raw URLs'] = raw_url
-                        if 'Commit URL' in fieldnames:
-                            row_data['Commit URL'] = commit['url']
+                    row_data = {}
+                    if 'Author' in fieldnames:
+                        row_data['Author'] = author_name
+                    if 'Date' in fieldnames:
+                        row_data['Date'] = commit_date
+                    if 'Message' in fieldnames:
+                        row_data['Message'] = commit_message
+                    if 'Files Changed' in fieldnames:
+                        row_data['Files Changed'] = files_changed
+                    if 'Status' in fieldnames:
+                        row_data['Status'] = status
+                    if 'Additions' in fieldnames:
+                        row_data['Additions'] = additions
+                    if 'Deletions' in fieldnames:
+                        row_data['Deletions'] = deletions
+                    if 'Raw URLs' in fieldnames:
+                        row_data['Raw URLs'] = file['raw_url']
+                    if 'Commit URL' in fieldnames:
+                        row_data['Commit URL'] = commit_url
 
-                        writer.writerow(row_data)
-
+                    writer.writerow(row_data)
+            
+            destroy_progress_bar()
             messagebox.showinfo("Success", f"Data saved to {csvfile.name}")
         else:
+            destroy_progress_bar()
             messagebox.showerror("Error", "File save operation canceled.")
 
 def update_branches():
@@ -243,6 +301,15 @@ def fetch_commit_details(commit_url):
 root = tk.Tk()
 root.title("GitHub Commits Fetcher")
 
+style = ttk.Style()
+style.layout('CircleStyle.Horizontal.TProgressbar',
+             [('Horizontal.Progressbar.trough',
+               {'children': [('Horizontal.Progressbar.pbar',
+                               {'side': 'left', 'sticky': 'ns'})],
+                'sticky': 'nswe'}),
+              ('Horizontal.Progressbar.label', {'sticky': ''})])
+style.configure('CircleStyle.Horizontal.TProgressbar', background='blue', thickness=20)
+
 mainframe = ttk.Frame(root, padding="10")
 mainframe.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
@@ -250,7 +317,6 @@ heading_font = tkfont.Font(family="Segoe UI", size=28, weight="bold")
 
 heading_label = ttk.Label(mainframe, text="GITHUB COMMIT FETCHER", font=heading_font)
 heading_label.grid(row=0, column=0, columnspan=4, pady=20)
-
 
 token_label = ttk.Label(mainframe, text="GitHub Token:")
 token_label.grid(row=1, column=1, sticky=tk.W)
@@ -267,7 +333,6 @@ def toggle_token_visibility():
     else:
         token_entry.config(show="*")
         show_hide_button.config(text="Show")
-
 
 show_hide_button = ttk.Button(mainframe, text="Show", command=toggle_token_visibility)
 show_hide_button.grid(row=1, column=3, sticky=tk.W)

@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+from tkinter import font as tkfont
 from tkcalendar import DateEntry
 import webbrowser
 import csv
@@ -14,7 +15,7 @@ from tkinter import Scrollbar
 
 load_dotenv()
 
-GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
+GITHUB_TOKEN = ""
 
 def fetch_branches(repo_url):
     parts = repo_url.rstrip('/').split('/')
@@ -36,6 +37,9 @@ def fetch_branches(repo_url):
         return None
 
 def fetch_commits(repo_url, branch, since, until):
+
+    global GITHUB_TOKEN
+
     parts = repo_url.rstrip('/').split('/')
     owner = parts[-2]
     repo = parts[-1]
@@ -99,13 +103,11 @@ def display_commits():
         commit_text.config(state=tk.NORMAL)
         commit_text.delete("1.0", tk.END)
 
-        # Write header row with padding for each column
         header = "Author".ljust(20) + "Date".ljust(30) + "Message".ljust(60) + "Files Changed".ljust(50) + \
                  "Status".ljust(15) + "Additions".ljust(10) + "Deletions".ljust(10) + "\n"
         commit_text.insert(tk.END, header)
         commit_text.insert(tk.END, "-" * 200 + "\n")
 
-        # Write commit data with padding for each column
         for commit in commits:
             commit_message = commit['commit']['message']
             author_name = commit['commit']['author']['name']
@@ -126,11 +128,9 @@ def display_commits():
                     file_info_list.append(f"{filename} (A: {additions}, D: {deletions}, S: {status})")
                 file_info = "; ".join(file_info_list)
                 
-                # Construct the formatted string for each row with padding for each column
                 row = f"{author_name.ljust(20)}{commit_date_ist_str.ljust(25)}{commit_message.ljust(60)}" \
                       f"{file_info.ljust(90)}"
                 
-                # Append the row to commit_text
                 commit_text.insert(tk.END, row + '\n')
         
         save_csv_button = ttk.Button(mainframe, text="Save to CSV", command=save_to_csv)
@@ -144,16 +144,37 @@ def display_commits():
         messagebox.showerror("Error", "No commits fetched.")
 
 def save_to_csv():
-    global commits  # Ensure commits are available from the display_commits function
+    global commits
+
     if not commits:
         messagebox.showerror("Error", "No commits fetched. Please fetch commits first.")
         return
 
     with filedialog.asksaveasfile(mode='w', defaultextension=".csv", filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]) as csvfile:
         if csvfile is not None:
-            fieldnames = ['Author', 'Date', 'Message', 'Files Changed']
+            fieldnames = []
+            if author_var.get():
+                fieldnames.append('Author')
+            if date_var.get():
+                fieldnames.append('Date')
+            if message_var.get():
+                fieldnames.append('Message')
+            if filenames_var.get():
+                fieldnames.append('Files Changed')
+            if status_var.get():
+                fieldnames.append('Status')
+            if additions_var.get():
+                fieldnames.append('Additions')
+            if deletions_var.get():
+                fieldnames.append('Deletions')
+            if raw_urls_var.get():
+                fieldnames.append('Raw URLs')
+            if commit_url_var.get():
+                fieldnames.append('Commit URL')
+
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
+
             for commit in commits:
                 commit_message = commit['commit']['message']
                 author_name = commit['commit']['author']['name']
@@ -161,27 +182,46 @@ def save_to_csv():
 
                 commit_details = fetch_commit_details(commit['url'])
                 if commit_details and 'files' in commit_details:
-                    file_info_list = []
                     for file in commit_details['files']:
                         filename = file['filename']
                         additions = file['additions']
                         deletions = file['deletions']
                         status = file['status']
-                        file_info_list.append(f"{filename} (A: {additions}, D: {deletions}, S: {status})")
-                    file_info = "; ".join(file_info_list)
-                    
-                    writer.writerow({
-                        'Author': author_name,
-                        'Date': commit_date,
-                        'Message': commit_message,
-                        'Files Changed': file_info
-                    })
+
+                        file_info = f"{filename} (A: {additions}, D: {deletions}, S: {status})"
+                        raw_url = file['raw_url']
+
+                        row_data = {}
+                        if 'Author' in fieldnames:
+                            row_data['Author'] = author_name
+                        if 'Date' in fieldnames:
+                            row_data['Date'] = commit_date
+                        if 'Message' in fieldnames:
+                            row_data['Message'] = commit_message
+                        if 'Files Changed' in fieldnames:
+                            row_data['Files Changed'] = file_info
+                        if 'Status' in fieldnames:
+                            row_data['Status'] = status
+                        if 'Additions' in fieldnames:
+                            row_data['Additions'] = additions
+                        if 'Deletions' in fieldnames:
+                            row_data['Deletions'] = deletions
+                        if 'Raw URLs' in fieldnames:
+                            row_data['Raw URLs'] = raw_url
+                        if 'Commit URL' in fieldnames:
+                            row_data['Commit URL'] = commit['url']
+
+                        writer.writerow(row_data)
+
             messagebox.showinfo("Success", f"Data saved to {csvfile.name}")
         else:
             messagebox.showerror("Error", "File save operation canceled.")
 
-
 def update_branches():
+    global GITHUB_TOKEN
+    
+    GITHUB_TOKEN = token_entry.get()
+    
     repo_url = repo_url_entry.get()
     branches = fetch_branches(repo_url)
     if branches:
@@ -206,46 +246,97 @@ root.title("GitHub Commits Fetcher")
 mainframe = ttk.Frame(root, padding="10")
 mainframe.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
-repo_url_label = ttk.Label(mainframe, text="GitHub Repository URL:")
-repo_url_label.grid(row=1, column=1, sticky=tk.W)
-repo_url_entry = ttk.Entry(mainframe, width=50)
-repo_url_entry.grid(row=1, column=2, sticky=(tk.W, tk.E))
+heading_font = tkfont.Font(family="Segoe UI", size=28, weight="bold")
 
-fetch_branches_button = ttk.Button(mainframe, text="Fetch Branches", command=update_branches)
-fetch_branches_button.grid(row=1, column=3, sticky=tk.W)
+heading_label = ttk.Label(mainframe, text="GITHUB COMMIT FETCHER", font=heading_font)
+heading_label.grid(row=0, column=0, columnspan=4, pady=20)
+
+
+token_label = ttk.Label(mainframe, text="GitHub Token:")
+token_label.grid(row=1, column=1, sticky=tk.W)
+
+show_token = tk.BooleanVar(value=False)
+
+# Function to toggle visibility and update button text
+def toggle_token_visibility():
+    global show_token
+    show_token = not show_token
+    if show_token:
+        token_entry.config(show="")
+        show_hide_button.config(text="Hide")
+    else:
+        token_entry.config(show="*")
+        show_hide_button.config(text="Show")
+
+
+show_hide_button = ttk.Button(mainframe, text="Show", command=toggle_token_visibility)
+show_hide_button.grid(row=1, column=3, sticky=tk.W)
+
+token_entry = ttk.Entry(mainframe, show="*")
+token_entry.grid(row=1, column=2, sticky=(tk.W, tk.E))
+
+repo_url_label = ttk.Label(mainframe, text="GitHub Repository URL:")
+repo_url_label.grid(row=2, column=1, sticky=tk.W)
+repo_url_entry = ttk.Entry(mainframe, width=50)
+repo_url_entry.grid(row=2, column=2, sticky=(tk.W, tk.E))
+
+fetch_branches_button = ttk.Button(mainframe, text="Fetch Branches", command=update_branches, width=20, style='TButton')
+fetch_branches_button.grid(row=2, column=3, sticky=tk.W)
 
 branch_label = ttk.Label(mainframe, text="Branch:")
-branch_label.grid(row=2, column=1, sticky=tk.W)
+branch_label.grid(row=3, column=1, sticky=tk.W)
 branch_combobox = ttk.Combobox(mainframe, state="readonly")
-branch_combobox.grid(row=2, column=2, sticky=(tk.W, tk.E))
+branch_combobox.grid(row=3, column=2, sticky=(tk.W, tk.E))
 
 since_date_label = ttk.Label(mainframe, text="Start Date:")
-since_date_label.grid(row=3, column=1, sticky=tk.W)
+since_date_label.grid(row=4, column=1, sticky=tk.W)
 since_date_entry = DateEntry(mainframe, width=12, background='darkblue',
                              foreground='white', borderwidth=2, year=2024, date_pattern="dd-mm-yyyy")
-since_date_entry.grid(row=3, column=2, sticky=(tk.W, tk.E))
+since_date_entry.grid(row=4, column=2, sticky=(tk.W, tk.E))
 
 until_date_label = ttk.Label(mainframe, text="End Date:")
-until_date_label.grid(row=4, column=1, sticky=tk.W)
+until_date_label.grid(row=5, column=1, sticky=tk.W)
 until_date_entry = DateEntry(mainframe, width=12, background='darkblue',
                              foreground='white', borderwidth=2, year=2024, date_pattern="dd-mm-yyyy")
-until_date_entry.grid(row=4, column=2, sticky=(tk.W, tk.E))
+until_date_entry.grid(row=5, column=2, sticky=(tk.W, tk.E))
 
-fetch_button = ttk.Button(mainframe, text="Fetch Commits", command=display_commits)
-fetch_button.grid(row=5, column=2, sticky=tk.W)
+fetch_button = ttk.Button(mainframe, text="Fetch Commits", command=display_commits, width=15, style='TButton')
+fetch_button.grid(row=6, column=2, sticky=tk.W)
 
 # commit_text = tk.Text(mainframe, wrap="word", width=180, height=40)
 # commit_text.grid(row=6, column=1, columnspan=2, sticky=(tk.W, tk.E))
 
-# Create a frame for commit_text and horizontal scrollbar
 commit_frame = tk.Frame(mainframe)
-commit_frame.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S))
+commit_frame.grid(row=8, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S))
 
-# Create commit_text inside commit_frame
-commit_text = tk.Text(commit_frame, wrap="none", width=180, height=40)  # Adjust width and height as needed
+commit_text = tk.Text(commit_frame, wrap="none", width=180, height=30)
 commit_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
-# Add horizontal scroll to commit_text
+# Define BooleanVar variables for checkboxes
+author_var = tk.BooleanVar()
+date_var = tk.BooleanVar()
+message_var = tk.BooleanVar()
+filenames_var = tk.BooleanVar()
+status_var = tk.BooleanVar()
+additions_var = tk.BooleanVar()
+deletions_var = tk.BooleanVar()
+raw_urls_var = tk.BooleanVar()
+commit_url_var = tk.BooleanVar()
+
+csv_frame = ttk.LabelFrame(mainframe, text="CSV Export Options")
+csv_frame.grid(row=7, column=0, columnspan=3, sticky=(tk.W, tk.E))
+
+ttk.Checkbutton(csv_frame, text="Author", variable=author_var).grid(row=0, column=0, sticky=tk.W)
+ttk.Checkbutton(csv_frame, text="Date", variable=date_var).grid(row=0, column=1, sticky=tk.W)
+ttk.Checkbutton(csv_frame, text="Message", variable=message_var).grid(row=0, column=2, sticky=tk.W)
+ttk.Checkbutton(csv_frame, text="Files Changed", variable=filenames_var).grid(row=1, column=0, sticky=tk.W)
+ttk.Checkbutton(csv_frame, text="Status", variable=status_var).grid(row=1, column=1, sticky=tk.W)
+ttk.Checkbutton(csv_frame, text="Additions", variable=additions_var).grid(row=1, column=2, sticky=tk.W)
+ttk.Checkbutton(csv_frame, text="Deletions", variable=deletions_var).grid(row=2, column=0, sticky=tk.W)
+ttk.Checkbutton(csv_frame, text="Raw URLs", variable=raw_urls_var).grid(row=2, column=1, sticky=tk.W)
+ttk.Checkbutton(csv_frame, text="Commit URL", variable=commit_url_var).grid(row=2, column=2, sticky=tk.W)
+
+
 scroll_x = Scrollbar(commit_frame, orient=tk.HORIZONTAL, command=commit_text.xview)
 commit_text.configure(xscrollcommand=scroll_x.set)
 scroll_x.grid(row=1, column=0, sticky=(tk.W, tk.E))
@@ -254,7 +345,7 @@ commit_text.config(state=tk.NORMAL)
 commit_text.delete("1.0", tk.END)
 
 commit_scroll = ttk.Scrollbar(mainframe, orient=tk.VERTICAL, command=commit_text.yview)
-commit_scroll.grid(row=6, column=5, sticky=(tk.N, tk.S))
+commit_scroll.grid(column=4, sticky=(tk.N, tk.S))
 commit_text.config(yscrollcommand=commit_scroll.set)
 
 commit_frame = tk.Frame(commit_text)

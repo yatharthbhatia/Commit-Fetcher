@@ -1,20 +1,22 @@
 import requests
 import os
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 from datetime import datetime
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox, filedialog, Scrollbar
 from tkinter import font as tkfont
-from tkcalendar import DateEntry
-import webbrowser
+# import webbrowser
 import csv
 import pytz
-from datetime import datetime
-import os
-from tkinter import Scrollbar
 import json
+from ttkthemes import ThemedTk
+from tkcalendar import DateEntry
+import threading
+# from ttkbootstrap.widgets import DateEntry
+# from ttkthemes import ThemedStyle
+# from ttkbootstrap import Style
 
-load_dotenv()
+# load_dotenv()
 
 GITHUB_TOKEN = ""
 
@@ -25,11 +27,11 @@ def show_progress_bar():
     overlay_frame = tk.Toplevel(root)
     overlay_frame.attributes('-alpha', 0.5)
     overlay_frame.configure(bg='black')
-    overlay_frame.overrideredirect(True) 
+    overlay_frame.overrideredirect(True)
     overlay_frame.geometry(f"{root.winfo_width()}x{root.winfo_height()}+{root.winfo_x()}+{root.winfo_y()}")
 
     progress_bar = ttk.Progressbar(overlay_frame, mode='indeterminate', style='CircleStyle.Horizontal.TProgressbar')
-    progress_bar.pack(padx=100, pady=50)
+    progress_bar.pack(padx=100, pady=20)
 
     progress_bar.start()
 
@@ -116,28 +118,14 @@ def save_commit_text_and_exit(commit_text):
         file.write(text_content)
     root.destroy()
 
-def display_commits():
-    repo_url = repo_url_entry.get()
-    branch = branch_combobox.get()
-    since = since_date_entry.get_date().isoformat()
-    until = until_date_entry.get_date().isoformat()
-    
-    try:
-        datetime.strptime(since, '%Y-%m-%d')
-        datetime.strptime(until, '%Y-%m-%d')
-    except ValueError:
-        messagebox.showerror("Error", "Invalid date format. Please use YYYY-MM-DD.")
-        return
-    
+def fetch_commits_in_thread():
+    global commits
     global overlay_frame
     global progress_bar
 
     overlay_frame, progress_bar = show_progress_bar()
+    commits = fetch_commits(repo_url_entry.get(), branch_combobox.get(), since_date_entry.get_date().isoformat(), until_date_entry.get_date().isoformat())
 
-
-    global commits
-    commits = fetch_commits(repo_url, branch, since, until)
-    
     if commits:
         commit_text.config(state=tk.NORMAL)
         commit_text.delete("1.0", tk.END)
@@ -150,11 +138,9 @@ def display_commits():
         for commit in commits:
             commit_message = commit['commit']['message']
             author_name = commit['commit']['author']['name']
-            commit_date_utc = commit['commit']['author']['date']
-            commit_date_utc = datetime.strptime(commit_date_utc, '%Y-%m-%dT%H:%M:%SZ')
-            ist = pytz.timezone('Asia/Kolkata')
-            commit_date_ist = commit_date_utc.astimezone(ist)
-            commit_date_ist_str = commit_date_ist.strftime('%Y-%m-%d %H:%M:%S IST')
+            commit_date_utc = commit['commit']['author']['date']  # Assuming UTC time
+            utc_date_commit = datetime.strptime(commit_date_utc, '%Y-%m-%dT%H:%M:%SZ')
+            commit_date_utc_str = utc_date_commit.strftime('%Y-%m-%d %H:%M:%S UTC')
 
             commit_details = fetch_commit_details(commit['url'])
             if commit_details and 'files' in commit_details:
@@ -166,18 +152,18 @@ def display_commits():
                     status = file['status']
                     file_info_list.append(f"{filename} (A: {additions}, D: {deletions}, S: {status})")
                 file_info = "; ".join(file_info_list)
-                
-                row = f"{author_name.ljust(20)}{commit_date_ist_str.ljust(25)}{commit_message.ljust(60)}" \
+
+                row = f"{author_name.ljust(20)}{commit_date_utc_str.ljust(25)}{commit_message.ljust(60)}" \
                       f"{file_info.ljust(90)}"
-                
+
                 commit_text.insert(tk.END, row + '\n')
-        
+
         save_csv_button = ttk.Button(mainframe, text="Save to CSV", command=save_to_csv)
-        save_csv_button.grid(row=7, column=2, sticky=tk.W)       
-       
+        save_csv_button.grid(row=7, column=2, sticky=tk.W, padx=5, pady=2)
+
         commit_text.config(state=tk.DISABLED)
 
-        destroy_progress_bar()        
+        destroy_progress_bar()
         root.protocol("WM_DELETE_WINDOW", lambda: save_commit_text_and_exit(commit_text))
         save_preferences()
 
@@ -186,24 +172,27 @@ def display_commits():
         messagebox.showerror("Error", "No commits fetched.")
         save_preferences()
 
+def display_commits():
+    thread = threading.Thread(target=fetch_commits_in_thread)
+    thread.start()
+
 def convert_api_commit_url_to_page_url(api_commit_url):
     # Check if the URL contains '/commits/' substring
     if '/commits/' in api_commit_url:
-        # Replaces '/commits/' with '/commit/'
+        # Replace '/commits/' with '/commit/'
         page_commit_url = api_commit_url.replace('/commits/', '/commit/')
         return page_commit_url
     else:
         return api_commit_url
 
-def save_to_csv():
+def save_to_csv_in_thread():
     global commits
+    global overlay_frame
+    global progress_bar
 
     if not commits:
         messagebox.showerror("Error", "No commits fetched. Please fetch commits first.")
         return
-    
-    global overlay_frame
-    global progress_bar
 
     overlay_frame, progress_bar = show_progress_bar()
 
@@ -235,7 +224,9 @@ def save_to_csv():
             for commit in commits:
                 commit_message = commit['commit']['message']
                 author_name = commit['commit']['author']['name']
-                commit_date = commit['commit']['author']['date']
+                commit_date_utc = commit['commit']['author']['date']  # Assuming UTC time
+                utc_date_commit = datetime.strptime(commit_date_utc, '%Y-%m-%dT%H:%M:%SZ')
+                commit_date_utc_str = utc_date_commit.strftime('%Y-%m-%d %H:%M:%S UTC')
 
                 commit_details = fetch_commit_details(commit['url'])
                 if commit_details and 'files' in commit_details:
@@ -254,7 +245,7 @@ def save_to_csv():
                     if 'Author' in fieldnames:
                         row_data['Author'] = author_name
                     if 'Date' in fieldnames:
-                        row_data['Date'] = commit_date
+                        row_data['Date'] = commit_date_utc_str
                     if 'Message' in fieldnames:
                         row_data['Message'] = commit_message
                     if 'Files Changed' in fieldnames:
@@ -271,15 +262,16 @@ def save_to_csv():
                         row_data['Commit URL'] = commit_url
 
                     writer.writerow(row_data)
-            
+
             destroy_progress_bar()
             messagebox.showinfo("Success", f"Data saved to {csvfile.name}")
-            save_preferences()
         else:
             destroy_progress_bar()
             messagebox.showerror("Error", "File save operation canceled.")
-            save_preferences()
-
+            
+def save_to_csv():
+    thread = threading.Thread(target=save_to_csv_in_thread)
+    thread.start()
 
 def update_branches():
     global GITHUB_TOKEN
@@ -303,8 +295,13 @@ def fetch_commit_details(commit_url):
     else:
         return None
     
-root = tk.Tk()
+# Setup UI
+
+# root = tk.Tk()
+root = ThemedTk(theme="arc")
+# style = Style(theme='cosmo') 
 root.title("GitHub Commits Fetcher")
+root.iconbitmap("icon.ico")
 
 mainframe = ttk.Frame(root, padding="10")
 mainframe.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -321,7 +318,7 @@ style.configure('CircleStyle.Horizontal.TProgressbar', background='blue', thickn
 heading_font = tkfont.Font(family="Segoe UI", size=28, weight="bold")
 
 heading_label = ttk.Label(mainframe, text="GITHUB COMMIT FETCHER", font=heading_font)
-heading_label.grid(row=0, column=0, columnspan=4, pady=20)
+heading_label.grid(row=0, column=0, columnspan=4, pady=20)  # Adjust columnspan and padding as needed
 
 token_label = ttk.Label(mainframe, text="GitHub Token:")
 token_label.grid(row=1, column=1, sticky=tk.W)
@@ -340,16 +337,15 @@ def toggle_token_visibility():
         show_hide_button.config(text="Show")
 
 token_entry = ttk.Entry(mainframe, show="*")
-token_entry.grid(row=1, column=2, sticky=(tk.W, tk.E))
-
+token_entry.grid(row=1, column=2, sticky=(tk.W, tk.E), pady=2)
 
 show_hide_button = ttk.Button(mainframe, text="Show", command=toggle_token_visibility)
-show_hide_button.grid(row=1, column=3, sticky=tk.W)
+show_hide_button.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
 
 repo_url_label = ttk.Label(mainframe, text="GitHub Repository URL:")
 repo_url_label.grid(row=2, column=1, sticky=tk.W)
 repo_url_entry = ttk.Entry(mainframe, width=50)
-repo_url_entry.grid(row=2, column=2, sticky=(tk.W, tk.E))
+repo_url_entry.grid(row=2, column=2, sticky=(tk.W, tk.E), pady=2)
 
 github_token = ""
 repo_url = ""
@@ -370,7 +366,7 @@ def load_preferences():
             preferences = json.load(file)
             github_token = preferences.get("github_token", "")
             repo_url = preferences.get("repo_url", "")
-        
+            # Set the entry values based on loaded preferences
             token_entry.delete(0, tk.END)
             token_entry.insert(0, github_token)
             repo_url_entry.delete(0, tk.END)
@@ -382,27 +378,27 @@ def load_preferences():
 load_preferences()
 
 fetch_branches_button = ttk.Button(mainframe, text="Fetch Branches", command=update_branches, width=20, style='TButton')
-fetch_branches_button.grid(row=2, column=3, sticky=tk.W)
+fetch_branches_button.grid(row=2, column=3, sticky=tk.W, padx=5, pady=2)
 
 branch_label = ttk.Label(mainframe, text="Branch:")
 branch_label.grid(row=3, column=1, sticky=tk.W)
 branch_combobox = ttk.Combobox(mainframe, state="readonly")
-branch_combobox.grid(row=3, column=2, sticky=(tk.W, tk.E))
+branch_combobox.grid(row=3, column=2, sticky=(tk.W, tk.E), pady=2)
 
 since_date_label = ttk.Label(mainframe, text="Start Date:")
 since_date_label.grid(row=4, column=1, sticky=tk.W)
-since_date_entry = DateEntry(mainframe, width=12, background='darkblue',
-                             foreground='white', borderwidth=2, year=2024, date_pattern="dd-mm-yyyy")
-since_date_entry.grid(row=4, column=2, sticky=(tk.W, tk.E))
+since_date_entry = DateEntry(mainframe, width=12, background='dark blue', arrowcolor='white',selectbackground="grey", borderwidth=2, year=2024, date_pattern="dd-mm-yyyy")
+# since_date_entry = DateEntry(mainframe)
+since_date_entry.grid(row=4, column=2, sticky=(tk.W, tk.E), pady=2)
 
 until_date_label = ttk.Label(mainframe, text="End Date:")
 until_date_label.grid(row=5, column=1, sticky=tk.W)
-until_date_entry = DateEntry(mainframe, width=12, background='darkblue',
-                             foreground='white', borderwidth=2, year=2024, date_pattern="dd-mm-yyyy")
-until_date_entry.grid(row=5, column=2, sticky=(tk.W, tk.E))
+until_date_entry = DateEntry(mainframe, width=12,background='dark blue', arrowcolor='white',selectbackground="grey", borderwidth=2, year=2024, date_pattern="dd-mm-yyyy")
+# until_date_entry = DateEntry(mainframe)
+until_date_entry.grid(row=5, column=2, sticky=(tk.W, tk.E), pady=2)
 
 fetch_button = ttk.Button(mainframe, text="Fetch Commits", command=display_commits, width=15, style='TButton')
-fetch_button.grid(row=6, column=2, sticky=tk.W)
+fetch_button.grid(row=6, column=2, sticky=tk.W,pady=2)
 
 # commit_text = tk.Text(mainframe, wrap="word", width=180, height=40)
 # commit_text.grid(row=6, column=1, columnspan=2, sticky=(tk.W, tk.E))
@@ -410,8 +406,9 @@ fetch_button.grid(row=6, column=2, sticky=tk.W)
 commit_frame = tk.Frame(mainframe)
 commit_frame.grid(row=8, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S))
 
-commit_text = tk.Text(commit_frame, wrap="none", width=180, height=30)
-commit_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+commit_text = tk.Text(commit_frame, wrap="none", width=180, height=30, state=tk.NORMAL)  # Adjust width and height as needed
+commit_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=2)
+
 
 # Define BooleanVar variables for checkboxes
 author_var = tk.BooleanVar()
@@ -425,17 +422,17 @@ raw_urls_var = tk.BooleanVar()
 commit_url_var = tk.BooleanVar()
 
 csv_frame = ttk.LabelFrame(mainframe, text="CSV Export Options")
-csv_frame.grid(row=7, column=0, columnspan=3, sticky=(tk.W, tk.E))
+csv_frame.grid(row=7, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=2)
 
-ttk.Checkbutton(csv_frame, text="Author", variable=author_var).grid(row=0, column=0, sticky=tk.W)
-ttk.Checkbutton(csv_frame, text="Date", variable=date_var).grid(row=0, column=1, sticky=tk.W)
-ttk.Checkbutton(csv_frame, text="Message", variable=message_var).grid(row=0, column=2, sticky=tk.W)
-ttk.Checkbutton(csv_frame, text="Files Changed", variable=filenames_var).grid(row=1, column=0, sticky=tk.W)
-ttk.Checkbutton(csv_frame, text="Status", variable=status_var).grid(row=1, column=1, sticky=tk.W)
-ttk.Checkbutton(csv_frame, text="Additions", variable=additions_var).grid(row=1, column=2, sticky=tk.W)
-ttk.Checkbutton(csv_frame, text="Deletions", variable=deletions_var).grid(row=2, column=0, sticky=tk.W)
-ttk.Checkbutton(csv_frame, text="Raw URLs", variable=raw_urls_var).grid(row=2, column=1, sticky=tk.W)
-ttk.Checkbutton(csv_frame, text="Commit URL", variable=commit_url_var).grid(row=2, column=2, sticky=tk.W)
+ttk.Checkbutton(csv_frame, text="Author", variable=author_var).grid(row=0, column=0, sticky=tk.W,padx=5, pady=2)
+ttk.Checkbutton(csv_frame, text="Date", variable=date_var).grid(row=0, column=1, sticky=tk.W,padx=5)
+ttk.Checkbutton(csv_frame, text="Message", variable=message_var).grid(row=0, column=2, sticky=tk.W,padx=5)
+ttk.Checkbutton(csv_frame, text="Files Changed", variable=filenames_var).grid(row=1, column=0, sticky=tk.W,padx=5, pady=2)
+ttk.Checkbutton(csv_frame, text="Status", variable=status_var).grid(row=1, column=1, sticky=tk.W,padx=5)
+ttk.Checkbutton(csv_frame, text="Additions", variable=additions_var).grid(row=1, column=2, sticky=tk.W,padx=5)
+ttk.Checkbutton(csv_frame, text="Deletions", variable=deletions_var).grid(row=2, column=0, sticky=tk.W,padx=5, pady=2)
+ttk.Checkbutton(csv_frame, text="Raw URLs", variable=raw_urls_var).grid(row=2, column=1, sticky=tk.W,padx=5)
+ttk.Checkbutton(csv_frame, text="Commit URL", variable=commit_url_var).grid(row=2, column=2, sticky=tk.W,padx=5)
 
 
 scroll_x = Scrollbar(commit_frame, orient=tk.HORIZONTAL, command=commit_text.xview)
@@ -448,7 +445,6 @@ commit_text.delete("1.0", tk.END)
 commit_scroll = ttk.Scrollbar(mainframe, orient=tk.VERTICAL, command=commit_text.yview)
 commit_scroll.grid(column=4, sticky=(tk.N, tk.S))
 commit_text.config(yscrollcommand=commit_scroll.set)
-
 commit_frame = tk.Frame(commit_text)
 
 root.columnconfigure(0, weight=1)

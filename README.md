@@ -42,6 +42,6 @@ Before running the application, ensure you have the following:
 
 ## Screenshots
 
-![image](https://github.com/YatharthBhatia/Commit-Tracker/assets/124282341/5b20db90-a181-475f-9f11-3c6ec15b0bf1)
-![image](https://github.com/YatharthBhatia/Commit-Tracker/assets/124282341/79f6ab71-a6cc-4ae0-acbb-57af84c481ed)
+![image](https://github.com/user-attachments/assets/8cb4f065-0212-484e-9a18-9ffc45f0d2ef)
+![image](https://github.com/user-attachments/assets/e2ea28ef-cc17-45fc-b332-1b982ce509ea)
 
